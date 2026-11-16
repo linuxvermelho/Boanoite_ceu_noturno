@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#03010a">
+  <meta name="description" content="Uma pequena viagem pelo universo antes de desejar boa noite à Amanda.">
+  <title>Boa noite, meu bem ✦</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      background: radial-gradient(ellipse at 52% 48%, #160c2a 0%, #080414 48%, #020106 100%);
+      color: #fff8ff;
+      font-family: Georgia, "Times New Roman", serif;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      transition: background 1.8s ease;
+    }
+    #sky {
+      position: fixed; inset: 0; width: 100%; height: 100%; display: block; z-index: 1;
+      opacity: 1; transition: opacity 1.8s ease;
+    }
+    .nebula {
+      pointer-events: none; position: fixed; inset: -18%; z-index: 0; opacity: .36;
+      background:
+        radial-gradient(ellipse at 26% 44%, rgba(103, 32, 181, .17), transparent 34%),
+        radial-gradient(ellipse at 73% 52%, rgba(213, 59, 154, .12), transparent 30%),
+        radial-gradient(ellipse at 54% 76%, rgba(37, 74, 174, .10), transparent 35%);
+      filter: blur(25px); transition: opacity 1.8s ease;
+    }
+    .message {
+      position: fixed; inset: 0; z-index: 2; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 28px 24px calc(28px + env(safe-area-inset-bottom));
+      text-align: center; opacity: 0; transform: translateY(12px) scale(.985);
+      transition: opacity 1.35s ease, transform 1.35s ease; pointer-events: none;
+    }
+    .message h1 {
+      margin: 0 0 20px; font-size: clamp(2rem, 7vw, 4.3rem);
+      font-weight: 400; letter-spacing: .025em; line-height: 1.15; color: #fff5ff;
+      text-shadow: 0 0 18px rgba(224, 159, 255, .46), 0 0 42px rgba(173, 93, 239, .29);
+    }
+    .message p {
+      width: min(640px, 100%); margin: 0; font-size: clamp(1.05rem, 3.7vw, 1.45rem);
+      font-weight: 400; line-height: 1.75; color: rgba(255, 239, 255, .94);
+      text-shadow: 0 0 16px rgba(177, 117, 255, .28);
+    }
+    .message .sparkle {
+      margin-bottom: 22px; color: #e8c5ff; font-size: 1.15rem;
+      letter-spacing: .55em; padding-left: .55em; opacity: .9;
+      animation: glow 2.8s ease-in-out infinite alternate;
+    }
+    .message .tap-hint {
+      margin-top: 30px; font: 600 .76rem/1.5 system-ui, sans-serif;
+      letter-spacing: .16em; text-transform: uppercase; color: rgba(231, 203, 255, .86);
+      opacity: 0; transform: translateY(5px); transition: opacity .7s ease, transform .7s ease;
+    }
+    body.waiting-to-read .message .tap-hint { opacity: 1; transform: translateY(0); animation: hintPulse 2s ease-in-out infinite alternate; }
+    body.reading-messages .message .tap-hint { opacity: 0; }
+    @keyframes hintPulse { from { text-shadow: 0 0 5px rgba(210, 155, 255, .18); } to { text-shadow: 0 0 15px rgba(210, 155, 255, .75); } }
+    @keyframes glow { from { text-shadow: 0 0 6px rgba(217, 165, 255, .25); } to { text-shadow: 0 0 20px rgba(217, 165, 255, .85); } }
+    body.show-message .message { opacity: 1; transform: translateY(0) scale(1); }
+    body.message-changing .message { opacity: 0; transform: translateY(9px) scale(.99); transition-duration: .58s; }
+    body.is-fading .message { opacity: 0; transform: translateY(-6px) scale(1.015); transition-duration: 1s; }
+    body.is-fading #sky, body.is-fading .nebula { opacity: 0; }
+    body.is-finished { background: #020106; }
+    body.is-finished .nebula { opacity: 0; }
+    @media (prefers-reduced-motion: reduce) {
+      .message, #sky, .nebula, body { transition-duration: .25s !important; }
+      .message .sparkle { animation: none; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="sky" aria-hidden="true"></canvas>
+  <div class="nebula" aria-hidden="true"></div>
+  <main class="message" aria-live="polite" aria-atomic="true">
+    <div class="sparkle" aria-hidden="true">✦ · ✧ · ✦</div>
+    <h1 id="message-title">Posso te confessar uma coisa?</h1>
+    <p id="message-text">Perdão se às vezes sou grudento. Eu tento me controlar, mas é difícil não querer ficar pertinho de você.</p>
+    <div class="tap-hint" id="message-hint">Toque na tela para começar</div>
+  </main>
+  <script>
+    (() => {
+      const canvas = document.getElementById('sky');
+      const ctx = canvas.getContext('2d', { alpha: true });
+      const body = document.body;
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      let width = 0, height = 0, dpr = 1, stars = [], nebulaTexture = null;
+      let startTime = performance.now(), previousTime = startTime, finished = false;
+      let sequenceStarted = false, waitingForReadClick = false, messageTimer = null;
+      const messageTitle = document.getElementById('message-title');
+      const messageText = document.getElementById('message-text');
+
+      // As mensagens são curtas, pessoais e aparecem uma de cada vez.
+      // As estações do ano mantêm o ritmo poético antes da mensagem final de boa-noite.
+      const messageSequence = [
+        { title: 'Posso te confessar uma coisa?', text: 'Perdão se às vezes sou grudento. Eu tento me controlar, mas é difícil não querer ficar pertinho de você.', duration: 6200 },
+        { title: 'Às vezes, penso em nós', text: 'Há momentos em que passo horas pensando na gente, nas pequenas coisas que vivemos e em tudo o que ainda podemos viver lado a lado.', duration: 7200 },
+        { title: 'Será que exagero?', text: 'Às vezes me pergunto se demonstro carinho demais ou se, pelo contrário, ainda sou lento demais para mostrar tudo o que sinto.', duration: 7200 },
+        { title: 'Eu invento meus próprios jeitos', text: 'Quando me faltam palavras ou oportunidades, procuro formas criativas — e, admito, às vezes exageradas — de demonstrar meu carinho por você.', duration: 7600 },
+        { title: 'Perto de você…', text: 'Parece que até a química do meu corpo muda: meu coração acelera e tudo em mim percebe que você está por perto.', duration: 6500 },
+        { title: 'Esse sorriso…', text: 'O seu sorriso, que eu amo tanto, consegue encher de alegria até os dias mais comuns.', duration: 5900 },
+        { title: 'Seu jeito me encanta', text: 'Você é tão cativante que às vezes me pego só te olhando, como se sempre houvesse algo novo e bonito para descobrir em você.', duration: 7200 },
+        { title: 'O seu mistério…', text: 'Seu jeito misterioso me deixa meio perdido — e, confesso, um pouquinho bobo também. Quanto mais te conheço, mais quero descobrir.', duration: 7100 },
+        { title: 'Verão ou inverno?', text: 'Às vezes, não consigo decifrar em qual estação você se transforma.', duration: 5200 },
+        { title: 'Outono ou primavera?', text: 'Cada dia parece revelar um lado diferente seu, e cada um tem seu próprio encanto.', duration: 5600 },
+        { title: 'Sol ou chuva?', text: 'Você pode ser um dia ensolarado ou uma chuva intensa de inverno… e eu nunca sei bem o que esperar.', duration: 5900 },
+        { title: 'Mas então você me toca…', text: 'E o mundo lá fora parece se acalmar. Meu coração, por sua vez, esquece por um instante como manter o compasso.', duration: 6900 },
+        { title: 'Às vezes, fico pensando…', text: 'Eu sei que posso ser intenso e me pergunto se todo esse carinho te incomoda. Nunca quero que você se sinta pressionada por aquilo que sinto.', duration: 7800 },
+        { title: 'Eu também estou aprendendo', text: 'Quero que meu carinho seja abrigo, não peso; que você se sinta querida, respeitada e livre para ser exatamente quem é.', duration: 7400 },
+        { title: 'Mesmo quando faltam palavras…', text: 'Não falta vontade de te fazer feliz. Ainda estou aprendendo a demonstrar tudo isso da melhor forma, mas meu carinho por você é sincero.', duration: 7200 },
+        { title: 'Boa noite, meu bem ✨', text: 'Que sua noite seja tranquila e cheia de bons sonhos. Queria estar aí para te dar um abraço e um beijo de boa noite. Dorme bem, minha Princesa. Te amo. 💜', duration: 8500 }
+      ];
+      const messageTransition = reducedMotion ? 320 : 680;
+
+      // Viagem: aceleração, nebulosas, planetas, buracos negros e desaceleração.
+      // Depois da viagem, a pessoa escolhe quando começar a ler as mensagens.
+      const accelFor = 3200;
+      const cruiseEnd = 8500;
+      const messageAt = 11200;
+      const rand = (min, max) => min + Math.random() * (max - min);
+      const clamp = (v, min = 0, max = 1) => Math.max(min, Math.min(max, v));
+      const smooth = (a, b, t) => { const p = clamp((t - a) / (b - a)); return p * p * (3 - 2 * p); };
+      const envelope = (t, a, b, c, d) => smooth(a, b, t) * (1 - smooth(c, d, t));
+      const easeIn = t => t * t;
+      const easeOut = t => 1 - (1 - t) * (1 - t);
+
+      function newStar(initial = false) {
+        return {
+          x: rand(-1.48, 1.48), y: rand(-1.48, 1.48),
+          z: initial ? rand(.45, 4.3) : rand(3.3, 4.5),
+          size: rand(.4, 1.7), alpha: rand(.26, .95), hue: Math.random() < .57 ? rand(252, 302) : rand(315, 355),
+          twinkle: rand(0, Math.PI * 2), px: null, py: null, dust: Math.random() < .38
+        };
+      }
+
+      function radialCloud(g, x, y, rx, ry, colors, rotation = 0) {
+        g.save(); g.translate(x, y); g.rotate(rotation); g.scale(rx, ry);
+        const grad = g.createRadialGradient(0, 0, 0, 0, 0, 1);
+        for (const [stop, color] of colors) grad.addColorStop(stop, color);
+        g.fillStyle = grad; g.beginPath(); g.arc(0, 0, 1, 0, Math.PI * 2); g.fill();
+        g.restore();
+      }
+
+      function makeNebula() {
+        nebulaTexture = document.createElement('canvas');
+        nebulaTexture.width = Math.max(1, Math.round(width * dpr));
+        nebulaTexture.height = Math.max(1, Math.round(height * dpr));
+        const g = nebulaTexture.getContext('2d');
+        g.setTransform(dpr, 0, 0, dpr, 0, 0);
+        g.clearRect(0, 0, width, height);
+        g.globalCompositeOperation = 'screen';
+        const w = width, h = height;
+        radialCloud(g, w*.28, h*.43, w*.45, h*.24, [[0,'rgba(141,49,211,.43)'],[.35,'rgba(115,34,190,.22)'],[1,'rgba(78,22,141,0)']], -.32);
+        radialCloud(g, w*.48, h*.53, w*.40, h*.19, [[0,'rgba(224,74,174,.35)'],[.38,'rgba(172,51,181,.18)'],[1,'rgba(94,25,151,0)']], .18);
+        radialCloud(g, w*.74, h*.42, w*.30, h*.23, [[0,'rgba(54,135,221,.32)'],[.4,'rgba(47,79,191,.18)'],[1,'rgba(30,46,119,0)']], -.45);
+        radialCloud(g, w*.66, h*.67, w*.36, h*.18, [[0,'rgba(224,90,111,.25)'],[.42,'rgba(133,49,169,.17)'],[1,'rgba(90,31,145,0)']], .25);
+        radialCloud(g, w*.30, h*.72, w*.28, h*.14, [[0,'rgba(69,76,208,.22)'],[.48,'rgba(72,52,163,.14)'],[1,'rgba(50,35,126,0)']], -.12);
+
+        // Filamentos ondulados, desenhados uma vez para manter a animação leve.
+        g.save(); g.lineCap = 'round'; g.globalCompositeOperation = 'screen';
+        for (let i = 0; i < 23; i++) {
+          const x = rand(-.1*w, .75*w), y = rand(.18*h, .83*h);
+          const span = rand(.12*w, .42*w), bend = rand(-.13*h, .13*h);
+          const grad = g.createLinearGradient(x, y, x + span, y + bend);
+          const hue = [270, 292, 315, 205][i % 4];
+          grad.addColorStop(0, `hsla(${hue}, 94%, 69%, 0)`);
+          grad.addColorStop(.48, `hsla(${hue}, 94%, 72%, ${rand(.035,.10)})`);
+          grad.addColorStop(1, `hsla(${hue}, 94%, 68%, 0)`);
+          g.strokeStyle = grad; g.lineWidth = rand(2, 8); g.shadowBlur = rand(5, 19); g.shadowColor = `hsla(${hue},90%,68%,.24)`;
+          g.beginPath(); g.moveTo(x, y);
+          g.bezierCurveTo(x + span*.22, y + bend*1.35, x + span*.62, y - bend*.8, x + span, y + bend);
+          g.stroke();
+        }
+        g.restore(); g.globalCompositeOperation = 'source-over';
+      }
+
+      function resize() {
+        dpr = Math.min(window.devicePixelRatio || 1, 1.75);
+        width = window.innerWidth; height = window.innerHeight;
+        canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
+        canvas.style.width = width + 'px'; canvas.style.height = height + 'px';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const count = Math.max(190, Math.min(470, Math.floor(width * height / 2550)));
+        stars = Array.from({ length: count }, () => newStar(true));
+        makeNebula();
+      }
+
+      function projection(star) {
+        const focal = Math.min(width, height) * .52;
+        return { x: width/2 + star.x*focal/star.z, y: height/2 + star.y*focal/star.z, scale: focal/star.z };
+      }
+
+      // Distância acumulada da mesma câmera usada no campo de estrelas.
+      // Os objetos fixos no espaço usam esse avanço para se aproximar em perspectiva,
+      // em vez de deslizar artificialmente na horizontal.
+      function cameraDistance(t) {
+        const sec = Math.max(0, t / 1000);
+        const accelDistance = .045 * 3.2 + 1.68 * 3.2 / 3;
+        const cruiseDistance = accelDistance + 1.73 * (8.5 - 3.2);
+        if (sec <= 3.2) return .045 * sec + 1.68 * Math.pow(sec, 3) / (3 * 3.2 * 3.2);
+        if (sec <= 8.5) return accelDistance + 1.73 * (sec - 3.2);
+        if (sec <= 11.2) {
+          const q = (sec - 8.5) / 2.7;
+          return cruiseDistance + 1.73 * 2.7 * (q - q*q*q + .5*q*q*q*q);
+        }
+        return cruiseDistance + 1.73 * 2.7 * .5;
+      }
+
+      // x/y/z são coordenadas do objeto no espaço. Conforme z diminui, o objeto
+      // aumenta e se afasta do ponto de fuga de forma coerente com a câmera avançando.
+      function projectWorldObject(x, y, depth, physicalRadius, t) {
+        const focal = Math.min(width, height) * .52;
+        const z = Math.max(.45, depth - cameraDistance(t));
+        return {
+          x: width/2 + x * focal / z,
+          y: height/2 + y * focal / z,
+          r: physicalRadius * focal / z,
+          z
+        };
+      }
+
+      function drawNebula(t) {
+        const alpha = envelope(t, 1700, 3200, 9300, 11100) * .92;
+        if (alpha <= .005 || !nebulaTexture) return;
+        // A nebulosa cresce a partir do ponto de fuga, acompanhando o avanço da câmera.
+        const zoom = 1 + cameraDistance(t) * .032;
+        const drawW = width * zoom, drawH = height * zoom;
+        ctx.save(); ctx.globalAlpha = alpha; ctx.globalCompositeOperation = 'screen';
+        ctx.drawImage(nebulaTexture, (width-drawW)/2, (height-drawH)/2, drawW, drawH);
+        // Um sopro luminoso atravessa a poeira antes de a viagem desacelerar.
+        const flash = Math.pow(Math.max(0, Math.sin((t-2500)*.00078)), 8) * envelope(t, 2200, 2800, 8700, 10200);
+        if (flash > .01) {
+          const grad = ctx.createRadialGradient(width*.52, height*.48, 0, width*.52, height*.48, Math.min(width,height)*.62);
+          grad.addColorStop(0, `rgba(186,145,255,${flash*.13})`); grad.addColorStop(1, 'rgba(90,55,175,0)');
+          ctx.fillStyle = grad; ctx.fillRect(0,0,width,height);
+        }
+        ctx.restore();
+      }
+
+      function drawSaturn(x, y, r, alpha, t) {
+        if (alpha <= .005) return;
+        ctx.save(); ctx.globalAlpha = alpha;
+        ctx.save(); ctx.translate(x,y); ctx.rotate(-.22);
+        // Anéis traseiros
+        let ring = ctx.createLinearGradient(-r*1.8, 0, r*1.8, 0);
+        ring.addColorStop(0, 'rgba(89,70,137,.12)'); ring.addColorStop(.2, 'rgba(226,191,224,.76)');
+        ring.addColorStop(.5, 'rgba(255,222,201,.88)'); ring.addColorStop(.78, 'rgba(158,113,185,.78)'); ring.addColorStop(1, 'rgba(60,47,107,.08)');
+        ctx.strokeStyle = ring; ctx.lineWidth = r*.25; ctx.beginPath(); ctx.ellipse(0,0,r*1.62,r*.49,0,Math.PI,Math.PI*2); ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,225,238,.30)'; ctx.lineWidth = r*.035; ctx.beginPath(); ctx.ellipse(0,0,r*1.78,r*.54,0,Math.PI,Math.PI*2); ctx.stroke();
+        ctx.restore();
+
+        const sphere = ctx.createRadialGradient(x-r*.35,y-r*.4,r*.04,x,y,r*1.12);
+        sphere.addColorStop(0,'#fff0d5'); sphere.addColorStop(.18,'#e8c4ce'); sphere.addColorStop(.42,'#ba8cbf'); sphere.addColorStop(.72,'#76539e'); sphere.addColorStop(1,'#20122f');
+        ctx.fillStyle = sphere; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+        ctx.save(); ctx.beginPath(); ctx.arc(x,y,r*.995,0,Math.PI*2); ctx.clip();
+        for (let i=0;i<7;i++) {
+          const yy = y-r*.72+i*r*.22;
+          ctx.strokeStyle = i%2 ? 'rgba(255,224,215,.18)' : 'rgba(90,49,126,.20)';
+          ctx.lineWidth = r*.085; ctx.beginPath(); ctx.moveTo(x-r,yy); ctx.bezierCurveTo(x-r*.32,yy-r*.08,x+r*.22,yy+r*.08,x+r,yy-r*.02); ctx.stroke();
+        }
+        const shade=ctx.createRadialGradient(x-r*.1,y-r*.15,r*.3,x+r*.5,y+r*.16,r*1.25);
+        shade.addColorStop(0,'rgba(10,6,27,0)'); shade.addColorStop(.56,'rgba(14,7,31,.28)'); shade.addColorStop(1,'rgba(3,2,10,.9)');
+        ctx.fillStyle=shade; ctx.fillRect(x-r,y-r,2*r,2*r); ctx.restore();
+        ctx.strokeStyle='rgba(245,215,255,.36)'; ctx.lineWidth=Math.max(.8,r*.012); ctx.beginPath(); ctx.arc(x,y,r*.99,-2.25,-.55); ctx.stroke();
+
+        // Parte frontal dos anéis
+        ctx.save(); ctx.translate(x,y); ctx.rotate(-.22);
+        ring = ctx.createLinearGradient(-r*1.7,0,r*1.7,0);
+        ring.addColorStop(0,'rgba(95,74,140,.18)'); ring.addColorStop(.18,'rgba(220,177,219,.78)');
+        ring.addColorStop(.48,'rgba(255,232,207,.96)'); ring.addColorStop(.76,'rgba(185,133,196,.82)'); ring.addColorStop(1,'rgba(73,54,118,.10)');
+        ctx.strokeStyle=ring; ctx.lineWidth=r*.20; ctx.beginPath(); ctx.ellipse(0,0,r*1.62,r*.49,0,0,Math.PI); ctx.stroke();
+        ctx.strokeStyle='rgba(255,242,233,.46)'; ctx.lineWidth=r*.018; ctx.beginPath(); ctx.ellipse(0,0,r*1.75,r*.53,0,0,Math.PI); ctx.stroke();
+        ctx.restore(); ctx.restore();
+      }
+
+      function drawEarth(x, y, r, alpha, t) {
+        if (alpha <= .005) return;
+        ctx.save(); ctx.globalAlpha=alpha;
+        const glow=ctx.createRadialGradient(x,y,r*.7,x,y,r*1.8);
+        glow.addColorStop(0,'rgba(82,151,255,.20)'); glow.addColorStop(1,'rgba(55,98,220,0)');
+        ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(x,y,r*1.8,0,Math.PI*2); ctx.fill();
+        const ocean=ctx.createRadialGradient(x-r*.32,y-r*.42,r*.04,x,y,r*1.12);
+        ocean.addColorStop(0,'#b0e9ff'); ocean.addColorStop(.16,'#4fabe8'); ocean.addColorStop(.58,'#2369c5'); ocean.addColorStop(.86,'#102658'); ocean.addColorStop(1,'#040714');
+        ctx.fillStyle=ocean; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+        ctx.save(); ctx.beginPath(); ctx.arc(x,y,r*.99,0,Math.PI*2); ctx.clip();
+        ctx.fillStyle='rgba(90,190,125,.84)';
+        ctx.beginPath(); ctx.moveTo(x-r*.62,y-r*.36); ctx.bezierCurveTo(x-r*.32,y-r*.63,x-r*.06,y-r*.38,x-r*.14,y-r*.12); ctx.bezierCurveTo(x-r*.3,y+r*.02,x-r*.08,y+r*.18,x-r*.26,y+r*.42); ctx.lineTo(x-r*.47,y+r*.34); ctx.lineTo(x-r*.64,y); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(x+r*.08,y-r*.68); ctx.bezierCurveTo(x+r*.52,y-r*.60,x+r*.62,y-r*.28,x+r*.43,y-r*.08); ctx.bezierCurveTo(x+r*.29,y+r*.12,x+r*.55,y+r*.20,x+r*.35,y+r*.43); ctx.lineTo(x+r*.13,y+r*.52); ctx.lineTo(x+r*.02,y+r*.17); ctx.lineTo(x+r*.18,y-r*.08); ctx.closePath(); ctx.fill();
+        // Nuvens finas
+        ctx.strokeStyle='rgba(231,249,255,.52)'; ctx.lineWidth=r*.055;
+        for (let i=0;i<4;i++) { ctx.beginPath(); ctx.ellipse(x+Math.sin(i*2.4)*r*.18,y-r*.45+i*r*.27,r*.74,r*.10,-.28,Math.PI*1.05,Math.PI*1.85); ctx.stroke(); }
+        const shade=ctx.createLinearGradient(x-r,y-r*.2,x+r,y+r*.15); shade.addColorStop(0,'rgba(0,0,0,0)'); shade.addColorStop(.5,'rgba(0,0,0,.06)'); shade.addColorStop(1,'rgba(0,0,18,.88)');
+        ctx.fillStyle=shade; ctx.fillRect(x-r,y-r,2*r,2*r); ctx.restore();
+        ctx.strokeStyle='rgba(135,210,255,.48)'; ctx.lineWidth=Math.max(.7,r*.018); ctx.beginPath(); ctx.arc(x,y,r*1.015,-2.5,-.45); ctx.stroke();
+        ctx.restore();
+      }
+
+      function drawBlackHole(x, y, r, alpha, spin = 0) {
+        if (alpha <= .005) return;
+        ctx.save(); ctx.globalAlpha=alpha;
+        // Halo gravitacional
+        const halo=ctx.createRadialGradient(x,y,r*.35,x,y,r*2.7);
+        halo.addColorStop(0,'rgba(8,5,22,.02)'); halo.addColorStop(.42,'rgba(99,51,202,.13)');
+        halo.addColorStop(.62,'rgba(236,88,178,.13)'); halo.addColorStop(.78,'rgba(255,151,91,.055)'); halo.addColorStop(1,'rgba(72,48,145,0)');
+        ctx.fillStyle=halo; ctx.beginPath(); ctx.arc(x,y,r*2.7,0,Math.PI*2); ctx.fill();
+        ctx.save(); ctx.translate(x,y); ctx.rotate(-.17 + spin);
+        ctx.globalCompositeOperation='screen';
+        // Disco quente e luminoso, com camadas de poeira girando.
+        const disk=ctx.createLinearGradient(-r*2.5,-r*.2,r*2.5,r*.2);
+        disk.addColorStop(0,'rgba(112,87,255,0)'); disk.addColorStop(.17,'rgba(144,108,255,.72)');
+        disk.addColorStop(.37,'rgba(255,136,196,.94)'); disk.addColorStop(.5,'rgba(255,231,198,1)');
+        disk.addColorStop(.67,'rgba(255,119,101,.83)'); disk.addColorStop(.86,'rgba(168,91,255,.56)'); disk.addColorStop(1,'rgba(85,79,228,0)');
+        for (const layer of [{w:.52,a:.14,blur:20},{w:.24,a:.28,blur:10},{w:.075,a:.8,blur:4}]) {
+          ctx.globalAlpha=alpha*layer.a; ctx.shadowBlur=r*layer.blur*.08; ctx.shadowColor='#ee8bff'; ctx.strokeStyle=disk; ctx.lineWidth=r*layer.w;
+          ctx.beginPath(); ctx.ellipse(0,0,r*2.17,r*.57,0,0,Math.PI*2); ctx.stroke();
+        }
+        ctx.globalAlpha=alpha; ctx.shadowBlur=0;
+        ctx.strokeStyle='rgba(255,220,219,.72)'; ctx.lineWidth=Math.max(1,r*.025); ctx.beginPath(); ctx.ellipse(0,0,r*1.78,r*.37,0,Math.PI,Math.PI*2); ctx.stroke();
+        ctx.restore();
+        // A sombra central permanece quase perfeitamente negra.
+        const hole=ctx.createRadialGradient(x-r*.18,y-r*.25,r*.03,x,y,r*1.02);
+        hole.addColorStop(0,'#000'); hole.addColorStop(.70,'#010107'); hole.addColorStop(.91,'#05030d'); hole.addColorStop(1,'rgba(15,8,32,.24)');
+        ctx.fillStyle=hole; ctx.beginPath(); ctx.arc(x,y,r*.86,0,Math.PI*2); ctx.fill();
+        ctx.strokeStyle='rgba(255,195,217,.47)'; ctx.lineWidth=Math.max(1,r*.022); ctx.shadowBlur=r*.18; ctx.shadowColor='#f3a2ff';
+        ctx.beginPath(); ctx.arc(x,y,r*.88,-Math.PI*.91,Math.PI*.78); ctx.stroke(); ctx.shadowBlur=0;
+        // Arcos de lente gravitacional acima e abaixo do horizonte.
+        ctx.globalAlpha=alpha*.48; ctx.strokeStyle='rgba(163,128,255,.52)'; ctx.lineWidth=Math.max(.7,r*.012);
+        ctx.beginPath(); ctx.ellipse(x,y-r*.13,r*1.14,r*.68,-.02,Math.PI*1.08,Math.PI*1.92); ctx.stroke();
+        ctx.beginPath(); ctx.ellipse(x,y+r*.13,r*1.18,r*.66,.02,.12,Math.PI*.86); ctx.stroke();
+        ctx.restore();
+      }
+
+      function drawComet(t) {
+        const a=envelope(t,5700,6200,7900,8500);
+        if(a<=.005) return;
+        const focal=Math.min(width,height)*.52;
+        const depth=10.25;
+        const z=Math.max(.45,depth-cameraDistance(t));
+        const wx=-.65, wy=-.25;
+        const headX=width/2+wx*focal/z, headY=height/2+wy*focal/z;
+        // A cauda está mais distante da câmera, logo fica mais perto do ponto de fuga.
+        const tailZ=z+2.2;
+        const tailX=width/2+wx*focal/tailZ, tailY=height/2+wy*focal/tailZ;
+        ctx.save(); ctx.globalAlpha=a*.84;
+        const grad=ctx.createLinearGradient(tailX,tailY,headX,headY);
+        grad.addColorStop(0,'rgba(119,109,255,0)'); grad.addColorStop(.55,'rgba(174,157,255,.30)'); grad.addColorStop(1,'rgba(255,250,255,.98)');
+        ctx.strokeStyle=grad; ctx.lineWidth=Math.max(1,Math.min(5,focal*.011/z)); ctx.shadowBlur=12; ctx.shadowColor='#bba1ff';
+        ctx.beginPath(); ctx.moveTo(tailX,tailY); ctx.lineTo(headX,headY); ctx.stroke();
+        ctx.fillStyle='#fff'; ctx.shadowBlur=15; ctx.beginPath(); ctx.arc(headX,headY,Math.max(1,Math.min(5,focal*.018/z)),0,Math.PI*2); ctx.fill(); ctx.restore();
+      }
+
+      function showReadPrompt() {
+        waitingForReadClick = true;
+        messageTitle.textContent = 'A viagem terminou…';
+        messageText.textContent = 'Ainda guardei algumas palavras para você. Toque na tela para ler, com calma. 💜';
+        body.classList.remove('reading-messages','message-changing');
+        body.classList.add('waiting-to-read','show-message');
+      }
+
+      function showMessage(index) {
+        const item = messageSequence[index];
+        messageTitle.textContent = item.title;
+        messageText.textContent = item.text;
+        body.classList.remove('message-changing');
+        body.classList.add('show-message');
+
+        messageTimer = window.setTimeout(() => {
+          if (index < messageSequence.length - 1) {
+            body.classList.add('message-changing');
+            messageTimer = window.setTimeout(() => showMessage(index + 1), messageTransition);
+          } else {
+            // A última mensagem fica visível pelo tempo definido e então tudo desaparece.
+            body.classList.add('is-fading');
+            messageTimer = window.setTimeout(() => {
+              finished = true;
+              body.classList.add('is-finished');
+              ctx.clearRect(0, 0, width, height);
+            }, reducedMotion ? 350 : 1250);
+          }
+        }, item.duration);
+      }
+
+      function startMessageSequence() {
+        if (sequenceStarted || !waitingForReadClick) return;
+        sequenceStarted = true;
+        waitingForReadClick = false;
+        body.classList.remove('waiting-to-read');
+        body.classList.add('reading-messages');
+        showMessage(0);
+      }
+
+      function draw(now) {
+        if (finished) return;
+        const elapsed=now-startTime;
+        const dt=Math.min((now-previousTime)/1000,.04); previousTime=now;
+        ctx.clearRect(0,0,width,height);
+        const t=elapsed;
+        drawNebula(t);
+
+        let speed=0;
+        if (t < accelFor) speed=.045+1.68*easeIn(t/accelFor);
+        else if (t < cruiseEnd) speed=1.73;
+        else if (t < messageAt) speed=1.73*(1-smooth(cruiseEnd,messageAt,t));
+        else speed=0;
+        if (reducedMotion) speed *= .58;
+        for (const star of stars) {
+          if(t < messageAt && speed > 0) {
+            star.z -= speed*dt;
+            if(star.z < .22) { Object.assign(star,newStar(false)); star.px=null; star.py=null; }
+          }
+          const p=projection(star);
+          if(p.x>-35&&p.x<width+35&&p.y>-35&&p.y<height+35) {
+            const pulse=.78+.22*Math.sin(now*.0015+star.twinkle);
+            const radius=Math.min(5.2,star.size+(4.3-Math.min(star.z,4.3))*.45);
+            const a=Math.min(1,star.alpha*pulse);
+            if(star.px!==null&&star.py!==null&&t<messageAt&&speed>.22) {
+              ctx.beginPath(); ctx.moveTo(star.px,star.py); ctx.lineTo(p.x,p.y);
+              ctx.strokeStyle=`hsla(${star.hue},95%,84%,${a*Math.min(.8,speed*.48)})`;
+              ctx.lineWidth=Math.max(.35,radius*.36); ctx.stroke();
+            }
+            ctx.beginPath(); ctx.fillStyle=star.dust?`hsla(${star.hue},88%,89%,${a*.5})`:`hsla(${star.hue},84%,96%,${a})`;
+            ctx.shadowBlur=star.dust?3:7; ctx.shadowColor=`hsla(${star.hue},90%,76%,${a})`;
+            ctx.arc(p.x,p.y,star.dust?radius*.52:radius,0,Math.PI*2); ctx.fill(); ctx.shadowBlur=0;
+          }
+          star.px=p.x; star.py=p.y;
+        }
+
+        // Pequeno buraco negro distante: cresce e se afasta do ponto de fuga
+        // seguindo a mesma perspectiva das estrelas.
+        const farBHAlpha=envelope(t,6250,6900,7900,8600)*.72;
+        const farBH=projectWorldObject(-.78,.48,12.25,.055,t);
+        drawBlackHole(farBH.x,farBH.y,farBH.r,farBHAlpha,.2+Math.sin(t*.00018)*.035);
+
+        // Saturno está fixo numa coordenada do espaço. A câmera avança; por isso
+        // ele aumenta e deriva diagonalmente para fora do ponto de fuga, não cruza a tela.
+        const saturnAlpha=envelope(t,3500,4150,7300,8300);
+        const saturn=projectWorldObject(.80,-.36,9.85,.22,t);
+        drawSaturn(saturn.x,saturn.y,saturn.r,saturnAlpha,t);
+
+        // O planeta azul vem de outro ponto do campo estelar e passa pela lateral oposta.
+        const earthAlpha=envelope(t,5950,6750,8050,9050);
+        const earth=projectWorldObject(-.70,.17,12.45,.12,t);
+        drawEarth(earth.x,earth.y,earth.r,earthAlpha,t);
+        drawComet(t);
+
+        // O buraco negro principal se aproxima quase alinhado ao eixo da câmera,
+        // aumenta conforme a distância diminui e some quando a viagem passa por ele.
+        const blackAlpha=envelope(t,8100,9300,10650,11550);
+        const black=projectWorldObject(.12,-.08,13.05,.165,t);
+        drawBlackHole(black.x,black.y,black.r,blackAlpha,-.12+Math.sin(t*.0002)*.045);
+
+        if (t >= messageAt && !sequenceStarted && !waitingForReadClick) showReadPrompt();
+        requestAnimationFrame(draw);
+      }
+
+      function restart() {
+        if (messageTimer !== null) window.clearTimeout(messageTimer);
+        messageTimer = null;
+        sequenceStarted = false;
+        waitingForReadClick = false;
+        body.classList.remove('show-message','message-changing','is-fading','is-finished','waiting-to-read','reading-messages');
+        finished=false; startTime=performance.now(); previousTime=startTime;
+        resize(); requestAnimationFrame(draw);
+      }
+      window.addEventListener('resize',resize,{passive:true});
+      document.addEventListener('click',()=>{
+        if (finished) { restart(); return; }
+        if (waitingForReadClick) startMessageSequence();
+      });
+      document.addEventListener('keydown',event=>{
+        if (event.code !== 'Space' && event.code !== 'Enter') return;
+        if (waitingForReadClick) { event.preventDefault(); startMessageSequence(); return; }
+        if (finished) { event.preventDefault(); restart(); }
+      });
+      resize(); requestAnimationFrame(draw);
+    })();
+  </script>
+</body>
+</html>
